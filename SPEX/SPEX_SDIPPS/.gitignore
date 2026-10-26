@@ -2,4 +2,15 @@ Test/sdipps_test
 Test/sdipps_lp_test
 Test/sdipps_lp_refactor
 *.csv
-Results/
+/Results/
+
+# Test/Data: keep only these pivot logs
+Test/Data/*
+!Test/Data/co9_bases.txt
+!Test/Data/cycle_bases.txt
+!Test/Data/dano3_3_LP_bases.txt
+!Test/Data/nemswrld_bases.txt
+
+# Test/Results: keep the folder, not its contents
+Test/Results/*
+!Test/Results/.gitkeep

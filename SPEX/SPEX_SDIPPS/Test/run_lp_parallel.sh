@@ -6,20 +6,25 @@
 # Usage (from SPEX/SPEX_SDIPPS, after "make Test/sdipps_lp_test
 # Test/sdipps_lp_refactor"):
 #
-#   Test/run_lp_parallel.sh [-n N] [-y Y] [-o out_root] [-s "scalings"]
-#                           pivot_log ...
+#   Test/run_lp_parallel.sh [-n N] [-y Y] [-u on|off] [-d data_dir]
+#                           [-o out_root] [-p "priorities"] [-s "scalings"]
+#                           [-e "early exits"] pivot_log ...
 #
 #       -n N     the last N updates of each log (default 50)
-#       -y Y     refactorize every Y updates in the baseline (default 10)
-#       -o DIR   results go to DIR/<name>/ (default Results); <name> is the
-#                log's file name without "_bases.txt"
+#       -y Y     refactorize every Y updates in the baseline (default 10);
+#                0 skips the baseline
+#       -u SW    run SPEX's update: on or off (default on)
+#       -d DIR   with no pivot_log given, every DIR/*_bases.txt is used
+#                (default Test/Data)
+#       -o DIR   results go to DIR/<name>/ (default Test/Results); <name> is
+#                the log's file name without "_bases.txt"
+#       -p LIST  the SDIPPS push priorities to run (default "diag col")
 #       -s LIST  the SDIPPS scalings to run (default "regular lazy eager")
-#
-# With no pivot_log given, every Test/Data/*_bases.txt is used.
+#       -e LIST  the SDIPPS early exit settings to run (default "off on")
 #
 # The test cases are those of run_lp_suite.sh, for every log: SPEX's update,
 # the refactorization baseline, and SDIPPS with every combination of push
-# priority (diag, col), scaling (from -s) and early exit (on, off).  All use
+# priority (from -p), scaling (from -s) and early exit (from -e).  All use
 # forward solves only (-f).  Each writes <case>.csv and <case>.log:
 #
 #   spex                        SPEX_update_lu_colrep
@@ -27,12 +32,13 @@
 #   sdipps_<p>[_lazy|_eager][_exit]
 #
 # Parallel runs: one worker per L3 cache, found from
-# /sys/devices/system/cpu/*/cache/index3.  Each worker is pinned (taskset) to
-# the CPUs that share its L3, and runs one test case at a time, so no two
-# test cases share an L3 cache.  The workers take test cases from one queue
-# (largest log first), so a long case on one L3 does not leave the other
-# idle.  The test cases still share the memory bandwidth, so their timings
-# can differ somewhat from runs made one at a time.
+# /sys/devices/system/cpu/*/cache/index3, except that the last L3 is left
+# open for other work when there is more than one.  Each worker is pinned
+# (taskset) to the CPUs that share its L3, and runs one test case at a time,
+# so no two test cases share an L3 cache.  The workers take test cases from
+# one queue (largest log first), so a long case on one L3 does not leave the
+# others idle.  The test cases still share the memory bandwidth, so their
+# timings can differ somewhat from runs made one at a time.
 #
 # Progress (start and end of each case, its L3 and its result) goes to
 # <out_root>/parallel_progress.log.
@@ -41,22 +47,53 @@ set -u
 
 N=50
 Y=10
-OUT=Results
+SPEX=on
+DATA=Test/Data
+OUT=Test/Results
+PRIORITIES="diag col"
 SCALINGS="regular lazy eager"
-while getopts "n:y:o:s:" opt ; do
+EXITS="off on"
+usage ()
+{
+    echo "usage: $0 [-n N] [-y Y] [-u on|off] [-d data_dir] [-o out_root]" \
+         "[-p priorities] [-s scalings] [-e early_exits] log ..."
+    exit 1
+}
+while getopts "n:y:u:d:o:p:s:e:" opt ; do
     case $opt in
         n) N=$OPTARG ;;
         y) Y=$OPTARG ;;
+        u) SPEX=$OPTARG ;;
+        d) DATA=$OPTARG ;;
         o) OUT=$OPTARG ;;
+        p) PRIORITIES=$OPTARG ;;
         s) SCALINGS=$OPTARG ;;
-        *) echo "usage: $0 [-n N] [-y Y] [-o out_root] [-s scalings] log ..." ;
-           exit 1 ;;
+        e) EXITS=$OPTARG ;;
+        *) usage ;;
     esac
 done
 shift $((OPTIND - 1))
+
+case $SPEX in on|off) ;; *) echo "-u: must be on or off" ; usage ;; esac
+case $Y in ''|*[!0-9]*) echo "-y: not a number: $Y" ; usage ;; esac
+for p in $PRIORITIES ; do
+    case $p in diag|col) ;; *) echo "-p: unknown priority $p" ; usage ;; esac
+done
+for scaling in $SCALINGS ; do
+    case $scaling in regular|lazy|eager) ;;
+        *) echo "-s: unknown scaling $scaling" ; usage ;; esac
+done
+for ex in $EXITS ; do
+    case $ex in off|on) ;; *) echo "-e: unknown setting $ex" ; usage ;; esac
+done
+
 LOGS=("$@")
 if [ ${#LOGS[@]} -eq 0 ] ; then
-    LOGS=(Test/Data/*_bases.txt)
+    LOGS=("$DATA"/*_bases.txt)
+    if [ ! -e "${LOGS[0]}" ] ; then
+        echo "no *_bases.txt in $DATA"
+        exit 1
+    fi
 fi
 
 for prog in Test/sdipps_lp_test Test/sdipps_lp_refactor ; do
@@ -76,6 +113,13 @@ L3_GROUPS=($(cat /sys/devices/system/cpu/cpu*/cache/index3/shared_cpu_list \
 if [ ${#L3_GROUPS[@]} -eq 0 ] ; then
     echo "could not find the L3 caches; running on one worker"
     L3_GROUPS=("0-$(( $(nproc) - 1 ))")
+fi
+
+# leave the last L3 cache open for other work, unless it is the only one
+if [ ${#L3_GROUPS[@]} -gt 1 ] ; then
+    L3_FREE=${L3_GROUPS[-1]}
+    unset 'L3_GROUPS[-1]'
+    echo "leaving the L3 cache of CPUs $L3_FREE open"
 fi
 
 #-------------------------------------------------------------------------------
@@ -98,11 +142,16 @@ for LOG in "${SORTED_LOGS[@]}" ; do
     NAME=${NAME%_bases}
     DIR="$OUT/$NAME"
     mkdir -p "$DIR"
-    echo "spex|$DIR|Test/sdipps_lp_test $LOG -n $N -f -s" >> "$QUEUE"
-    echo "refactor|$DIR|Test/sdipps_lp_refactor $LOG -n $N -f -y $Y" >> "$QUEUE"
-    for p in diag col ; do
+    if [ $SPEX = on ] ; then
+        echo "spex|$DIR|Test/sdipps_lp_test $LOG -n $N -f -s" >> "$QUEUE"
+    fi
+    if [ $Y -gt 0 ] ; then
+        echo "refactor|$DIR|Test/sdipps_lp_refactor $LOG -n $N -f -y $Y" \
+            >> "$QUEUE"
+    fi
+    for p in $PRIORITIES ; do
         for scaling in $SCALINGS ; do
-            for ex in "" _exit ; do
+            for ex in $EXITS ; do
                 opts=""
                 suffix=""
                 [ $p = col ] && opts="$opts -c"
@@ -110,9 +159,12 @@ for LOG in "${SORTED_LOGS[@]}" ; do
                     lazy)  opts="$opts -l" ; suffix=_lazy ;;
                     eager) opts="$opts -g" ; suffix=_eager ;;
                 esac
-                [ -n "$ex" ] && opts="$opts -e"
-                echo "sdipps_$p$suffix$ex|$DIR|Test/sdipps_lp_test $LOG -n $N -f$opts" \
-                    >> "$QUEUE"
+                if [ $ex = on ] ; then
+                    opts="$opts -e"
+                    suffix=${suffix}_exit
+                fi
+                echo "sdipps_$p$suffix|$DIR|Test/sdipps_lp_test $LOG" \
+                    "-n $N -f$opts" >> "$QUEUE"
             done
         done
     done
