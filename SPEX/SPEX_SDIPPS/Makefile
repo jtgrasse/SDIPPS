@@ -29,12 +29,11 @@ ROOT = ../..
 CC     ?= gcc
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
 
-# -fopenmp only if the compiler takes it (Apple clang does not; SPEX's CMake
-# build then leaves OpenMP out of libspex too)
+
 OPENMP ?= $(shell echo 'int main (void) { return 0 ; }' | \
           $(CC) -fopenmp -x c - -o /dev/null 2>/dev/null && echo -fopenmp)
 
-# GMP and MPFR from Homebrew, if it is installed (macOS)
+
 BREW   := $(shell brew --prefix 2>/dev/null)
 ifneq ($(BREW),)
     BREW_INC = -I$(BREW)/include
