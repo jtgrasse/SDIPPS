@@ -67,7 +67,8 @@ $(TEST): Test/sdipps_test.c Include/SDIPPS.h $(SPEX)/build/libspex.a
 
 # each data set under every combination of the options
 OPTIONS = "" "-g" "-l" "-e" "-g -e" "-l -e" \
-          "-c" "-c -g" "-c -l" "-c -e" "-c -g -e" "-c -l -e"
+          "-c" "-c -g" "-c -l" "-c -e" "-c -g -e" "-c -l -e" \
+          "-r" "-r -g" "-r -l" "-r -l -e" "-c -r" "-c -r -l" "-c -r -g -e"
 
 run: $(TEST)
 	@for opts in $(OPTIONS) ; do \

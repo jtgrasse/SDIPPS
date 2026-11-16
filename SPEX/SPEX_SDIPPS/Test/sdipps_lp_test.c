@@ -9,17 +9,18 @@
  * Usage:
  *
  *      sdipps_lp_test pivot_log [-n N] [-o metrics.csv] [-s] [-c] [-g | -l]
- *                     [-e] [-v] [-f]
+ *                     [-e] [-r] [-v] [-f]
  *
  *          -n N    replay the last N updates (default 50)
  *          -o F    write the metrics to F (default sdipps_lp_metrics.csv)
  *          -s      use SPEX's update, SPEX_update_lu_colrep, instead of
- *                  SDIPPS_LU_col_rep (for comparison; -c -g -l -e are
+ *                  SDIPPS_LU_col_rep (for comparison; -c -g -l -e -r are
  *                  ignored)
  *          -c      prefer column pushes (default: prefer diagonal pushes)
  *          -g      eager backtracking scaling (SDIPPS_SCALING_EAGER)
  *          -l      lazy backtracking scaling (SDIPPS_SCALING_LAZY)
  *          -e      early exit
+ *          -r      eager RwSOP, without the seed history (benchmark)
  *          -v      check every solve exactly (default: only the last one)
  *          -f      forward solve only: no transposed solve, except one (not
  *                  timed, after the metrics) after the last update, to
@@ -82,6 +83,9 @@
  *      reduce_bits_saved total bits removed by the reductions
  *      max_nnz_muL, max_nnz_muU, max_bits_muL, max_bits_muU   the largest
  *                      number of nonzeros and total bits each seed reached
+ *      rwsop_rows      seed rows updated by the full RwSOP formula
+ *      scaled_rows     seed rows updated by a pure scaling (with -r, one per
+ *                      row per frame; otherwise by the history update)
  */
 
 #include "sdipps_pivot_log.h"
@@ -92,7 +96,7 @@ static void write_sdipps_stats (FILE *out, const SDIPPS_stats *s, int64_t m)
 {
     if (s == NULL)
     {
-        for (int t = 0 ; t < 16 ; t++) fprintf (out, ",") ;
+        for (int t = 0 ; t < 18 ; t++) fprintf (out, ",") ;
         return ;
     }
     fprintf (out, ",%" PRId64 ",%" PRId64 ",%" PRId64, (m-1) - s->landing,
@@ -106,6 +110,7 @@ static void write_sdipps_stats (FILE *out, const SDIPPS_stats *s, int64_t m)
     fprintf (out, ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64,
         s->max_nnz_mu_L, s->max_nnz_mu_U, s->max_bits_mu_L,
         s->max_bits_mu_U) ;
+    fprintf (out, ",%" PRId64 ",%" PRId64, s->n_rwsop_rows, s->n_scaled_rows) ;
 }
 
 #undef  FREE_WORKSPACE
@@ -144,8 +149,8 @@ int main (int argc, char *argv [])
     bool verify_all = false, use_spex = false, forward_only = false ;
     if (argc < 2)
     {
-        printf ("usage: %s pivot_log [-n N] [-o metrics.csv] [-s] [-c] [-l]"
-            " [-e] [-v] [-f]\n", argv [0]) ;
+        printf ("usage: %s pivot_log [-n N] [-o metrics.csv] [-s] [-c]"
+            " [-g | -l] [-e] [-r] [-v] [-f]\n", argv [0]) ;
         return (1) ;
     }
     for (int a = 2 ; a < argc ; a++)
@@ -177,6 +182,10 @@ int main (int argc, char *argv [])
         else if (strcmp (argv [a], "-e") == 0)
         {
             opt.early_exit = true ;
+        }
+        else if (strcmp (argv [a], "-r") == 0)
+        {
+            opt.eager_rwsop = true ;
         }
         else if (strcmp (argv [a], "-v") == 0)
         {
@@ -225,9 +234,10 @@ int main (int argc, char *argv [])
         const char *scaling = (opt.scaling == SDIPPS_SCALING_EAGER) ? "eager" :
             (opt.scaling == SDIPPS_SCALING_LAZY) ? "lazy" : "regular" ;
         printf ("update method: SDIPPS_LU_col_rep (prefer %s pushes, %s "
-            "scaling, early exit %s)\n",
+            "scaling, early exit %s, seed history %s)\n",
             (opt.push_choice == SDIPPS_PREFER_COLUMN) ? "column" : "diagonal",
-            scaling, opt.early_exit ? "on" : "off") ;
+            scaling, opt.early_exit ? "on" : "off",
+            opt.eager_rwsop ? "off" : "on") ;
     }
 
     //--------------------------------------------------------------------------
@@ -273,7 +283,7 @@ int main (int argc, char *argv [])
         "pushes_skipped,n_diag,n_col,diag_forced,diag_chosen,col_forced,"
         "col_chosen,pure_L,pure_U,reduce_calls,reduce_effective,"
         "reduce_bits_saved,max_nnz_muL,max_nnz_muU,max_bits_muL,"
-        "max_bits_muU\n") ;
+        "max_bits_muU,rwsop_rows,scaled_rows\n") ;
 
     //--------------------------------------------------------------------------
     // the last nrun updates

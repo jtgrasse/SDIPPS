@@ -21,7 +21,9 @@
 // true values, by position.  h[i] is the last frame whose RwSOP mu[i] has been
 // through.  RwSOP updates only the rows it must; the others are a pure
 // pivot-over-pivot scaling and are brought up to date (sdipps_catch_up) when
-// they are next read.  At frame k only positions > k are live.
+// they are next read.  At frame k only positions > k are live.  With
+// eager_rwsop, RwSOP updates every live row at every push instead, so every
+// mu[i] is always current: h is not used, and sdipps_catch_up does nothing.
 //
 // Lazy signs.  A column push negates every later frame.  Instead of doing
 // that, theta[j] = (-1)^(number of column pushes at frames <= j) is recorded;

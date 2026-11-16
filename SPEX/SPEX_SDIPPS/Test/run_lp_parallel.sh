@@ -8,7 +8,8 @@
 #
 #   Test/run_lp_parallel.sh [-n N] [-y Y] [-u on|off] [-d data_dir]
 #                           [-o out_root] [-p "priorities"] [-s "scalings"]
-#                           [-e "early exits"] pivot_log ...
+#                           [-e "early exits"] [-r "rwsop modes"]
+#                           pivot_log ...
 #
 #       -n N     the last N updates of each log (default 50)
 #       -y Y     refactorize every Y updates in the baseline (default 10);
@@ -21,15 +22,19 @@
 #       -p LIST  the SDIPPS push priorities to run (default "diag col")
 #       -s LIST  the SDIPPS scalings to run (default "regular lazy eager")
 #       -e LIST  the SDIPPS early exit settings to run (default "off on")
+#       -r LIST  the SDIPPS RwSOP modes to run (default "history"):
+#                history uses the seed history; eager does every RwSOP in
+#                full, without it (sdipps_lp_test -r)
 #
 # The test cases are those of run_lp_suite.sh, for every log: SPEX's update,
 # the refactorization baseline, and SDIPPS with every combination of push
-# priority (from -p), scaling (from -s) and early exit (from -e).  All use
-# forward solves only (-f).  Each writes <case>.csv and <case>.log:
+# priority (from -p), scaling (from -s), early exit (from -e) and RwSOP mode
+# (from -r).  All use forward solves only (-f).  Each writes <case>.csv and
+# <case>.log:
 #
 #   spex                        SPEX_update_lu_colrep
 #   refactor                    SPEX LU from scratch every Y updates
-#   sdipps_<p>[_lazy|_eager][_exit]
+#   sdipps_<p>[_lazy|_eager][_exit][_rwsop]
 #
 # Parallel runs: one worker per L3 cache, found from
 # /sys/devices/system/cpu/*/cache/index3, except that the last L3 is left
@@ -53,13 +58,15 @@ OUT=Test/Results
 PRIORITIES="diag col"
 SCALINGS="regular lazy eager"
 EXITS="off on"
+RWSOPS="history"
 usage ()
 {
     echo "usage: $0 [-n N] [-y Y] [-u on|off] [-d data_dir] [-o out_root]" \
-         "[-p priorities] [-s scalings] [-e early_exits] log ..."
+         "[-p priorities] [-s scalings] [-e early_exits] [-r rwsop_modes]" \
+         "log ..."
     exit 1
 }
-while getopts "n:y:u:d:o:p:s:e:" opt ; do
+while getopts "n:y:u:d:o:p:s:e:r:" opt ; do
     case $opt in
         n) N=$OPTARG ;;
         y) Y=$OPTARG ;;
@@ -69,6 +76,7 @@ while getopts "n:y:u:d:o:p:s:e:" opt ; do
         p) PRIORITIES=$OPTARG ;;
         s) SCALINGS=$OPTARG ;;
         e) EXITS=$OPTARG ;;
+        r) RWSOPS=$OPTARG ;;
         *) usage ;;
     esac
 done
@@ -85,6 +93,10 @@ for scaling in $SCALINGS ; do
 done
 for ex in $EXITS ; do
     case $ex in off|on) ;; *) echo "-e: unknown setting $ex" ; usage ;; esac
+done
+for rw in $RWSOPS ; do
+    case $rw in history|eager) ;;
+        *) echo "-r: unknown RwSOP mode $rw" ; usage ;; esac
 done
 
 LOGS=("$@")
@@ -152,19 +164,25 @@ for LOG in "${SORTED_LOGS[@]}" ; do
     for p in $PRIORITIES ; do
         for scaling in $SCALINGS ; do
             for ex in $EXITS ; do
-                opts=""
-                suffix=""
-                [ $p = col ] && opts="$opts -c"
-                case $scaling in
-                    lazy)  opts="$opts -l" ; suffix=_lazy ;;
-                    eager) opts="$opts -g" ; suffix=_eager ;;
-                esac
-                if [ $ex = on ] ; then
-                    opts="$opts -e"
-                    suffix=${suffix}_exit
-                fi
-                echo "sdipps_$p$suffix|$DIR|Test/sdipps_lp_test $LOG" \
-                    "-n $N -f$opts" >> "$QUEUE"
+                for rw in $RWSOPS ; do
+                    opts=""
+                    suffix=""
+                    [ $p = col ] && opts="$opts -c"
+                    case $scaling in
+                        lazy)  opts="$opts -l" ; suffix=_lazy ;;
+                        eager) opts="$opts -g" ; suffix=_eager ;;
+                    esac
+                    if [ $ex = on ] ; then
+                        opts="$opts -e"
+                        suffix=${suffix}_exit
+                    fi
+                    if [ $rw = eager ] ; then
+                        opts="$opts -r"
+                        suffix=${suffix}_rwsop
+                    fi
+                    echo "sdipps_$p$suffix|$DIR|Test/sdipps_lp_test $LOG" \
+                        "-n $N -f$opts" >> "$QUEUE"
+                done
             done
         done
     done

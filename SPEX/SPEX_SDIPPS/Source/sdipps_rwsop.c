@@ -15,6 +15,9 @@
 // pure scaling and is left for sdipps_catch_up, except row k+2: it is next
 // frame's support, which must be current.
 //
+// With eager_rwsop the pure scalings are done here too, on every live row,
+// so the seed is always current and the history h is not used.
+//
 // theta[k] must already be set, and old frame k+1 must have scale 1 if
 // s_p != 0.
 
@@ -34,6 +37,8 @@ SPEX_info sdipps_rwsop
 
     sdipps_seed *seed = &(H->seed) ;
     mpz_t *mu = seed->mu ;
+    bool eager = W->opt.eager_rwsop ;
+    int64_t stamp = eager ? ++(W->stamp) : 0 ;  // eager: rows done below
 
     //--------------------------------------------------------------------------
     // rows where T[i,k+1] != 0 (none if s_p = 0)
@@ -55,10 +60,44 @@ SPEX_info sdipps_rwsop
             {
                 SPEX_MPZ_NEG (mu [i], mu [i]) ;
             }
-            seed->h [i] = k ;
+            if (eager)
+            {
+                W->mark [i] = stamp ;
+            }
+            else
+            {
+                seed->h [i] = k ;
+            }
             seed->bits += sdipps_bits (mu [i]) ;
             sdipps_seed_track (seed, i, was_nonzero) ;
+            W->stats.n_rwsop_rows++ ;
         }
+    }
+
+    //--------------------------------------------------------------------------
+    // eager_rwsop: every other live row, mu[i] <- eps rho_{k+1} mu[i] / rho_k
+    //--------------------------------------------------------------------------
+
+    if (eager)
+    {
+        for (int64_t t = 0 ; t < seed->nlist ; t++)
+        {
+            int64_t i = seed->list [t] ;
+            if (i < k+2 || W->mark [i] == stamp || sdipps_is_zero (mu [i]))
+            {
+                continue ;
+            }
+            seed->bits -= sdipps_bits (mu [i]) ;
+            SPEX_MPZ_MUL (mu [i], mu [i], W->rho [k+1]) ;
+            SPEX_MPZ_DIVEXACT (mu [i], mu [i], W->rho [k]) ;
+            if (eps < 0)
+            {
+                SPEX_MPZ_NEG (mu [i], mu [i]) ;
+            }
+            seed->bits += sdipps_bits (mu [i]) ;
+            W->stats.n_scaled_rows++ ;
+        }
+        return (SPEX_OK) ;
     }
 
     //--------------------------------------------------------------------------
