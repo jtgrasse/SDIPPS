@@ -28,12 +28,25 @@ ROOT = ../..
 
 CC     ?= gcc
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
+
+# -fopenmp only if the compiler takes it (Apple clang does not; SPEX's CMake
+# build then leaves OpenMP out of libspex too)
+OPENMP ?= $(shell echo 'int main (void) { return 0 ; }' | \
+          $(CC) -fopenmp -x c - -o /dev/null 2>/dev/null && echo -fopenmp)
+
+# GMP and MPFR from Homebrew, if it is installed (macOS)
+BREW   := $(shell brew --prefix 2>/dev/null)
+ifneq ($(BREW),)
+    BREW_INC = -I$(BREW)/include
+    BREW_LIB = -L$(BREW)/lib
+endif
+
 INC     = -IInclude -I$(SPEX)/Include -I$(SPEX)/Demo \
-          -I$(ROOT)/SuiteSparse_config
+          -I$(ROOT)/SuiteSparse_config $(BREW_INC)
 LIBS    = $(SPEX)/build/libspex.a $(ROOT)/COLAMD/build/libcolamd.a \
           $(ROOT)/AMD/build/libamd.a \
           $(ROOT)/SuiteSparse_config/build/libsuitesparseconfig.a \
-          -lmpfr -lgmp -lm -fopenmp
+          $(BREW_LIB) -lmpfr -lgmp -lm $(OPENMP)
 
 # SPEX demo utilities reused by the test: reading a triplet matrix, checking
 # a solution exactly, and printing error messages
