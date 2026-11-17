@@ -22,9 +22,9 @@ info = SDIPPS_LU_col_rep (F, vk, col, &opt, &stats, option) ;
 | `push_choice` | `SDIPPS_PREFER_DIAGONAL` (default), `SDIPPS_PREFER_COLUMN` | Which push to take when both are possible (`sL sU != 0` and `pi != 0`). If `sL sU == 0`, only a diagonal push is possible; if `pi == 0`, only a column push. |
 | `scaling` | `SDIPPS_SCALING_NONE` (default), `SDIPPS_SCALING_EAGER`, `SDIPPS_SCALING_LAZY` | How a backtracking step that is a pure scaling is done. That happens in a diagonal push when the other half's support is 0; the new frame is then the old one times `lambda = rho~_{k-1}/rho_k`. **NONE:** the regular backtrack, with every entry multiplied by `rho~_{k-1}` and divided by `rho_k`. **EAGER:** `lambda` is reduced to `p/q` by `SDIPPS_Reduce` once per run of such pushes, and every entry is divided by `q` and then multiplied by `p`. Dividing first is exact because `SDIPPS_Reduce` returns lowest terms (Chen 2022, §5.4), and it keeps the intermediate numbers smaller. No pending scales are left; the only saving comes from the reduction. **LAZY:** the reduced `p/q` goes into the vector's pending scale and no entry is touched. The frames past an early exit are scaled the same way. |
 | `early_exit` | `false` (default), `true` | Stop pushing once the exiting row of U is empty past the diagonal. The later frames are only rescaled. |
+| `eager_rwsop` | `false` (default), `true` | For benchmarking the seed history. **false:** RwSOP updates only the rows it must, and the rest catch up later by the pivot-cancellation history update. **true:** every RwSOP is done in full, on every live seed row, at every push; the history is not used. The factorization is the same either way. |
 
-These parts are always on:
-- **Seed history:** RwSOP updates only the rows it must, and the rest catch up later by the pivot-cancellation history update.
+This part is always on:
 - **Lazy sign tracking:** the `theta` array.
 
 ## Layout
@@ -74,9 +74,9 @@ make run        # run the tests only
 Usage of `Test/sdipps_test`:
 
 ```
-Test/sdipps_test matrix_file update_file [-c] [-g | -l] [-e] [-n N]
+Test/sdipps_test matrix_file update_file [-c] [-g | -l] [-e] [-r] [-n N]
     -c  prefer column pushes    -g  eager scaling    -l  lazy scaling
-    -e  early exit
+    -e  early exit              -r  eager RwSOP (no seed history)
     -n N  frame check only if n <= N (default 200)
 ```
 
@@ -120,12 +120,12 @@ The defaults are `LOG=Test/Data/co9_bases.txt`, `N=50` and `Y=5`. `<name>` is th
 
 The programs behind these targets:
 ```
-Test/sdipps_lp_test     pivot_log [-n N] [-o out.csv] [-s] [-c] [-l] [-e] [-v]
+Test/sdipps_lp_test     pivot_log [-n N] [-o out.csv] [-s] [-c] [-g | -l] [-e] [-r] [-v] [-f]
 Test/sdipps_lp_refactor pivot_log [-n N] [-y Y] [-o out.csv] [-v]
 ```
 
 - **`-s`** runs SPEX's own update (`SPEX_update_lu_colrep`) in place of SDIPPS, with everything else unchanged.
-- **`-c`, `-g`, `-l`, `-e`** are the SDIPPS options: prefer column pushes, eager scaling, lazy scaling, early exit.
+- **`-c`, `-g`, `-l`, `-e`, `-r`** are the SDIPPS options: prefer column pushes, eager scaling, lazy scaling, early exit, eager RwSOP.
 - **`-v`** checks every solve exactly; by default only the last one is checked.
 
 **The pivot log** (`Test/sdipps_pivot_log.c/.h`, shared by both programs) holds:
@@ -178,3 +178,5 @@ A is made integral column by column: each column is multiplied by the LCM of its
 | `reduce_bits_saved` | total bits removed by those reductions: bits(num) + bits(den) − bits(p) − bits(q) |
 | `max_nnz_muL`, `max_nnz_muU` | the largest number of nonzeros each seed reached during the update |
 | `max_bits_muL`, `max_bits_muU` | the largest total bits each seed reached, as stored: a deferred entry is counted at its last history |
+| `rwsop_rows` | seed rows updated by the full RwSOP formula (`s_p T[i,k+1] != 0`); the same with or without `-r` |
+| `scaled_rows` | seed rows updated by a pure pivot-over-pivot scaling: one per row per frame with `-r`, otherwise one per history update (catch-up) |

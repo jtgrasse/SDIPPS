@@ -4,8 +4,12 @@ Test/sdipps_lp_refactor
 *.csv
 /Results/
 
-# Test/Data: keep only these pivot logs
+# Test/Data: keep only the unit test data (make run) and these pivot logs
 Test/Data/*
+!Test/Data/example.upd.txt
+!Test/Data/pm1_12.mat.txt
+!Test/Data/pm1_12.upd.txt
+!Test/Data/10teams.upd.txt
 !Test/Data/co9_bases.txt
 !Test/Data/cycle_bases.txt
 !Test/Data/dano3_3_LP_bases.txt

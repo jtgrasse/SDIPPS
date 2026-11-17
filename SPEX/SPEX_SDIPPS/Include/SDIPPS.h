@@ -72,13 +72,20 @@ typedef struct
     // diagonal.  The entering column then lands at that position, and the
     // later frames only change by one scale factor.
     bool early_exit ;
+
+    // For benchmarking the seed history: do every RwSOP in full, on every
+    // live row of the seed, at every push.  The seed history (deferring the
+    // rows whose RwSOP is a pure scaling until they are read) is then not
+    // used.  The result is the same either way.
+    bool eager_rwsop ;
 }
 SDIPPS_options ;
 
 // The default options: prefer diagonal pushes, the regular backtrack, no
-// early exit.  Passing NULL for the options to SDIPPS_LU_col_rep gives these.
+// early exit, the seed history.  Passing NULL for the options to
+// SDIPPS_LU_col_rep gives these.
 #define SDIPPS_DEFAULT_OPTIONS \
-    { SDIPPS_PREFER_DIAGONAL, SDIPPS_SCALING_NONE, false }
+    { SDIPPS_PREFER_DIAGONAL, SDIPPS_SCALING_NONE, false, false }
 
 //------------------------------------------------------------------------------
 // statistics (optional output)
@@ -118,6 +125,12 @@ typedef struct
     // total bits (of the stored values, at live positions) they reach
     int64_t max_nnz_mu_L, max_nnz_mu_U ;
     int64_t max_bits_mu_L, max_bits_mu_U ;
+
+    // seed row updates, both halves: by the full RwSOP formula (s_p T[i,k+1]
+    // != 0), and by a pure scaling (rho over rho, done at once with
+    // eager_rwsop, or several frames together by the history update)
+    int64_t n_rwsop_rows ;
+    int64_t n_scaled_rows ;
 }
 SDIPPS_stats ;
 

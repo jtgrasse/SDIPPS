@@ -131,6 +131,8 @@ void sdipps_seed_track
 // These are the pure scalings of frames h+1..m at once (pivot cancellation:
 // rho_{h+2} ... rho_{m+1} over rho_{h+1} ... rho_m).  The signs: an RwSOP
 // carries eps = -1 exactly at a column push, where theta changes sign.
+//
+// With eager_rwsop every mu[i] is already current (and h is not kept).
 
 SPEX_info sdipps_catch_up
 (
@@ -141,6 +143,7 @@ SPEX_info sdipps_catch_up
 )
 {
     SPEX_info info ;
+    if (W->opt.eager_rwsop) { return (SPEX_OK) ; }
     sdipps_seed *seed = &(H->seed) ;
     if (sdipps_is_zero (seed->mu [i])) { return (SPEX_OK) ; }
     int64_t h = seed->h [i] ;
@@ -155,5 +158,6 @@ SPEX_info sdipps_catch_up
     }
     seed->bits += sdipps_bits (seed->mu [i]) ;
     seed->h [i] = m ;
+    W->stats.n_scaled_rows++ ;
     return (SPEX_OK) ;
 }

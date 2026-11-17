@@ -8,12 +8,13 @@
  *
  * Usage:
  *
- *      sdipps_test matrix_file update_file [-c] [-g | -l] [-e] [-n N]
+ *      sdipps_test matrix_file update_file [-c] [-g | -l] [-e] [-r] [-n N]
  *
  *          -c      prefer column pushes (default: prefer diagonal pushes)
  *          -g      eager backtracking scaling (SDIPPS_SCALING_EAGER)
  *          -l      lazy backtracking scaling (SDIPPS_SCALING_LAZY)
  *          -e      early exit
+ *          -r      eager RwSOP, without the seed history (benchmark)
  *          -n N    check every frame against a dense REF LU only if n <= N
  *                  (default 200)
  *
@@ -388,7 +389,8 @@ int main (int argc, char *argv [])
     int64_t max_check = 200 ;
     if (argc < 3)
     {
-        printf ("usage: %s matrix_file update_file [-c] [-l] [-e] [-n N]\n",
+        printf ("usage: %s matrix_file update_file [-c] [-g | -l] [-e] [-r]"
+            " [-n N]\n",
             argv [0]) ;
         return (1) ;
     }
@@ -409,6 +411,10 @@ int main (int argc, char *argv [])
         else if (strcmp (argv [a], "-e") == 0)
         {
             opt.early_exit = true ;
+        }
+        else if (strcmp (argv [a], "-r") == 0)
+        {
+            opt.eager_rwsop = true ;
         }
         else if (strcmp (argv [a], "-n") == 0 && a+1 < argc)
         {
@@ -453,9 +459,11 @@ int main (int argc, char *argv [])
 
     printf ("SDIPPS test: %s, n = %" PRId64 ", nnz(L+U) = %" PRId64 "\n",
         argv [1], n, nnz_LU (F)) ;
-    printf ("options: prefer %s pushes, %s scaling, early exit %s\n",
+    printf ("options: prefer %s pushes, %s scaling, early exit %s, "
+        "seed history %s\n",
         (opt.push_choice == SDIPPS_PREFER_COLUMN) ? "column" : "diagonal",
-        scaling_name (opt.scaling), opt.early_exit ? "on" : "off") ;
+        scaling_name (opt.scaling), opt.early_exit ? "on" : "off",
+        opt.eager_rwsop ? "off (eager RwSOP)" : "on") ;
     printf ("frame check: %s\n\n", check ? "on" : "off (n too large)") ;
     printf ("  #   col     xi -> landing   diag  col    nnz(L+U)  time (s)"
         "   solve  tsolve  frames\n") ;
